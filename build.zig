@@ -1,6 +1,8 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
+    const optimize = b.standardOptimizeOption(.{});
+
     const executables = [_]struct {
         name: []const u8,
         path: []const u8,
@@ -14,6 +16,7 @@ pub fn build(b: *std.Build) void {
             .root_module = b.addModule(exe_config.name, .{
                 .root_source_file = b.path(exe_config.path),
                 .target = b.graph.host,
+                .optimize = optimize,
             }),
         });
 

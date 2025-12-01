@@ -3,7 +3,10 @@ const math = std.math;
 
 const input_data = @embedFile("input.txt");
 
+// Result: 969
+// Time: 41625ns (41μs)
 pub fn main() !void {
+    var timer = try std.time.Timer.start();
     var out = std.fs.File.stdout().writerStreaming(&.{});
 
     var line_iter = std.mem.splitScalar(u8, input_data, '\n');
@@ -30,5 +33,8 @@ pub fn main() !void {
         state = new_state;
     }
 
-    try out.interface.print("Result: {d}\n", .{ res });
+    const elapsed = timer.read();
+
+    try out.interface.print("Result: {d}\n", .{res});
+    try out.interface.print("Time: {d}ns ({d}μs)\n", .{ elapsed, elapsed / 1000 });
 }
