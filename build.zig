@@ -8,6 +8,7 @@ pub fn build(b: *std.Build) void {
         path: []const u8,
     }{
         .{ .name = "01-secret-entrance", .path = "01-secret-entrance/main.zig" },
+        .{ .name = "02-gift-shop", .path = "02-gift-shop/main.zig" },
     };
 
     inline for (executables) |exe_config| {
