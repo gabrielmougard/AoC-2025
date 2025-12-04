@@ -2,41 +2,88 @@ const std = @import("std");
 
 const input_data = @embedFile("input.txt");
 
-const directions = [_][2]i32{
-    .{ -1, -1 }, .{ 0, -1 }, .{ 1, -1 },
-    .{ -1, 0 },              .{ 1, 0 },
-    .{ -1, 1 },  .{ 0, 1 },  .{ 1, 1 },
-};
+const WIDTH: usize = 138;
+const HEIGHT: usize = 138;
+const LINE_STRIDE: usize = WIDTH + 1;
 
-fn countAdjacentRolls(grid: []const u8, x: usize, y: usize, width: usize, height: usize) usize {
-    var adjacent_rolls: usize = 0;
+const Vec = @Vector(16, u8);
+const AT_VEC: Vec = @splat('@');
 
-    for (directions) |dir| {
-        const nx_signed: i32 = @as(i32, @intCast(x)) + dir[0];
-        const ny_signed: i32 = @as(i32, @intCast(y)) + dir[1];
-
-        if (nx_signed < 0 or ny_signed < 0) continue;
-        const nx: usize = @intCast(nx_signed);
-        const ny: usize = @intCast(ny_signed);
-        if (nx >= width or ny >= height) continue;
-
-        if (grid[ny * width + nx] == '@') {
-            adjacent_rolls += 1;
-        }
-    }
-
-    return adjacent_rolls;
+inline fn getCell(grid: []const u8, x: usize, y: usize) u8 {
+    return grid[y * LINE_STRIDE + x];
 }
 
-fn part1(grid: []const u8, width: usize, height: usize) usize {
+inline fn setCell(grid: []u8, x: usize, y: usize, val: u8) void {
+    grid[y * LINE_STRIDE + x] = val;
+}
+
+fn countAdjacentRolls(grid: []const u8, x: usize, y: usize) u32 {
+    var count: u32 = 0;
+
+    const x_i32: i32 = @intCast(x);
+    const y_i32: i32 = @intCast(y);
+
+    if (x > 0 and y > 0) {
+        count += @intFromBool(getCell(grid, x - 1, y - 1) == '@');
+    }
+    if (y > 0) {
+        count += @intFromBool(getCell(grid, x, y - 1) == '@');
+    }
+    if (x < WIDTH - 1 and y > 0) {
+        count += @intFromBool(getCell(grid, x + 1, y - 1) == '@');
+    }
+    if (x > 0) {
+        count += @intFromBool(getCell(grid, x - 1, y) == '@');
+    }
+    if (x < WIDTH - 1) {
+        count += @intFromBool(getCell(grid, x + 1, y) == '@');
+    }
+    if (x > 0 and y < HEIGHT - 1) {
+        count += @intFromBool(getCell(grid, x - 1, y + 1) == '@');
+    }
+    if (y < HEIGHT - 1) {
+        count += @intFromBool(getCell(grid, x, y + 1) == '@');
+    }
+    if (x < WIDTH - 1 and y < HEIGHT - 1) {
+        count += @intFromBool(getCell(grid, x + 1, y + 1) == '@');
+    }
+
+    _ = x_i32;
+    _ = y_i32;
+
+    return count;
+}
+
+fn part1(grid: []const u8) usize {
     var accessible_count: usize = 0;
 
-    for (0..height) |y| {
-        for (0..width) |x| {
-            if (grid[y * width + x] != '@') continue;
+    for (0..HEIGHT) |y| {
+        const row_start = y * LINE_STRIDE;
 
-            if (countAdjacentRolls(grid, x, y, width, height) < 4) {
-                accessible_count += 1;
+        var x: usize = 0;
+        while (x + 16 <= WIDTH) : (x += 16) {
+            const chunk: Vec = grid[row_start + x ..][0..16].*;
+            const matches = chunk == AT_VEC;
+            const mask: u16 = @bitCast(matches);
+
+            if (mask != 0) {
+                var m = mask;
+                while (m != 0) {
+                    const bit_pos = @ctz(m);
+                    const actual_x = x + bit_pos;
+                    if (countAdjacentRolls(grid, actual_x, y) < 4) {
+                        accessible_count += 1;
+                    }
+                    m &= m - 1;
+                }
+            }
+        }
+
+        while (x < WIDTH) : (x += 1) {
+            if (getCell(grid, x, y) == '@') {
+                if (countAdjacentRolls(grid, x, y) < 4) {
+                    accessible_count += 1;
+                }
             }
         }
     }
@@ -44,26 +91,49 @@ fn part1(grid: []const u8, width: usize, height: usize) usize {
     return accessible_count;
 }
 
-fn part2(original_grid: []const u8, width: usize, height: usize, allocator: std.mem.Allocator) !usize {
-    const grid = try allocator.alloc(u8, width * height);
-    defer allocator.free(grid);
-    @memcpy(grid, original_grid);
+fn part2(input: []const u8) usize {
+    var grid: [HEIGHT * LINE_STRIDE]u8 = undefined;
+    @memcpy(&grid, input[0 .. HEIGHT * LINE_STRIDE]);
 
-    const to_remove = try allocator.alloc([2]usize, width * height);
-    defer allocator.free(to_remove);
+    var to_remove_x: [WIDTH * HEIGHT]u8 = undefined;
+    var to_remove_y: [WIDTH * HEIGHT]u8 = undefined;
 
     var total_removed: usize = 0;
 
     while (true) {
         var remove_count: usize = 0;
 
-        for (0..height) |y| {
-            for (0..width) |x| {
-                if (grid[y * width + x] != '@') continue;
+        for (0..HEIGHT) |y| {
+            const row_start = y * LINE_STRIDE;
 
-                if (countAdjacentRolls(grid, x, y, width, height) < 4) {
-                    to_remove[remove_count] = .{ x, y };
-                    remove_count += 1;
+            var x: usize = 0;
+            while (x + 16 <= WIDTH) : (x += 16) {
+                const chunk: Vec = grid[row_start + x ..][0..16].*;
+                const matches = chunk == AT_VEC;
+                const mask: u16 = @bitCast(matches);
+
+                if (mask != 0) {
+                    var m = mask;
+                    while (m != 0) {
+                        const bit_pos = @ctz(m);
+                        const actual_x = x + bit_pos;
+                        if (countAdjacentRolls(&grid, actual_x, y) < 4) {
+                            to_remove_x[remove_count] = @intCast(actual_x);
+                            to_remove_y[remove_count] = @intCast(y);
+                            remove_count += 1;
+                        }
+                        m &= m - 1;
+                    }
+                }
+            }
+
+            while (x < WIDTH) : (x += 1) {
+                if (getCell(&grid, x, y) == '@') {
+                    if (countAdjacentRolls(&grid, x, y) < 4) {
+                        to_remove_x[remove_count] = @intCast(x);
+                        to_remove_y[remove_count] = @intCast(y);
+                        remove_count += 1;
+                    }
                 }
             }
         }
@@ -71,9 +141,7 @@ fn part2(original_grid: []const u8, width: usize, height: usize, allocator: std.
         if (remove_count == 0) break;
 
         for (0..remove_count) |i| {
-            const x = to_remove[i][0];
-            const y = to_remove[i][1];
-            grid[y * width + x] = '.';
+            setCell(&grid, to_remove_x[i], to_remove_y[i], '.');
         }
 
         total_removed += remove_count;
@@ -85,49 +153,21 @@ fn part2(original_grid: []const u8, width: usize, height: usize, allocator: std.
 pub fn main() !void {
     var out = std.fs.File.stdout().writerStreaming(&.{});
 
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
-    var height: usize = 0;
-    var width: usize = 0;
-
-    var line_iter = std.mem.splitScalar(u8, input_data, '\n');
-    while (line_iter.next()) |line| {
-        if (line.len > 0) {
-            width = line.len;
-            height += 1;
-        }
-    }
-
-    const grid = try allocator.alloc(u8, width * height);
-
-    line_iter = std.mem.splitScalar(u8, input_data, '\n');
-    var y: usize = 0;
-    while (line_iter.next()) |line| {
-        if (line.len > 0) {
-            @memcpy(grid[y * width .. (y + 1) * width], line);
-            y += 1;
-        }
-    }
-
     var timer1 = try std.time.Timer.start();
-    const result1 = part1(grid, width, height);
+    const result1 = part1(input_data);
     const elapsed1 = timer1.read();
 
     var timer2 = try std.time.Timer.start();
-    const result2 = try part2(grid, width, height, allocator);
+    const result2 = part2(input_data);
     const elapsed2 = timer2.read();
 
     // Part 1: 1419
-    // Time: 53625ns (53μs)
+    // Time: 32958ns (32.96μs)
     try out.interface.print("Part 1: {d}\n", .{result1});
-    try out.interface.print("Time: {d}ns ({d}μs)\n\n", .{ elapsed1, elapsed1 / 1000 });
+    try out.interface.print("Time: {d}ns ({d:.2}μs)\n\n", .{ elapsed1, @as(f64, @floatFromInt(elapsed1)) / 1000.0 });
 
     // Part 2: 8739
-    // Time: 1371208ns (1371μs)
+    // Time: 855459ns (855.46μs)
     try out.interface.print("Part 2: {d}\n", .{result2});
-    try out.interface.print("Time: {d}ns ({d}μs)\n\n", .{ elapsed2, elapsed2 / 1000 });
-
-    try out.interface.print("Total time: {d}ns ({d}μs)\n", .{ elapsed1 + elapsed2, (elapsed1 + elapsed2) / 1000 });
+    try out.interface.print("Time: {d}ns ({d:.2}μs)\n\n", .{ elapsed2, @as(f64, @floatFromInt(elapsed2)) / 1000.0 });
 }
