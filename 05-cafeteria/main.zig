@@ -4,6 +4,10 @@ const input_data = @embedFile("input.txt");
 const Interval = struct {
     start: u64,
     end: u64,
+
+    inline fn size(self: Interval) u64 {
+        return self.end - self.start + 1;
+    }
 };
 
 fn lessThan(_: void, a: Interval, b: Interval) bool {
@@ -25,16 +29,19 @@ fn contains(intervals: []const Interval, value: u64) bool {
             left = mid + 1;
         }
     }
+
     return false;
 }
 
-pub fn main() !void {
-    var timer = try std.time.Timer.start();
+const ParseResult = struct {
+    intervals: []Interval,
+    query_start: std.mem.SplitIterator(u8, .scalar),
+};
 
-    var buffer: [64 * 1024]Interval = undefined;
+fn parseAndMerge(buffer: []Interval) ParseResult {
     var len: usize = 0;
-
     var line_iter = std.mem.splitScalar(u8, input_data, '\n');
+
     while (line_iter.next()) |line| {
         if (line.len == 0) break;
         var parts = std.mem.splitSequence(u8, line, "-");
@@ -45,6 +52,7 @@ pub fn main() !void {
     }
 
     std.mem.sort(Interval, buffer[0..len], {}, lessThan);
+
     var write: usize = 0;
     for (buffer[1..len]) |next| {
         if (next.start <= buffer[write].end + 1) {
@@ -55,17 +63,56 @@ pub fn main() !void {
         }
     }
 
-    const intervals = buffer[0 .. write + 1];
+    return .{
+        .intervals = buffer[0 .. write + 1],
+        .query_start = line_iter,
+    };
+}
+
+fn part1(buffer: []Interval) struct { result: usize, intervals: []Interval } {
+    var parsed = parseAndMerge(buffer);
+
     var res: usize = 0;
-    while (line_iter.next()) |line| {
+    while (parsed.query_start.next()) |line| {
         if (line.len == 0) continue;
         const number = std.fmt.parseInt(u64, line, 10) catch continue;
-        if (contains(intervals, number)) res += 1;
+        if (contains(parsed.intervals, number)) res += 1;
     }
 
-    const elapsed = timer.read();
+    return .{ .result = res, .intervals = parsed.intervals };
+}
 
+fn part2(buffer: []Interval) u64 {
+    const parsed = parseAndMerge(buffer);
+
+    var res: u64 = 0;
+    for (parsed.intervals) |iv| {
+        res += iv.size();
+    }
+
+    return res;
+}
+
+pub fn main() !void {
     var out = std.fs.File.stdout().writerStreaming(&.{});
-    try out.interface.print("Part 1: {d}\n", .{res});
-    try out.interface.print("Time: {d}ns ({d:.2}μs)\n", .{ elapsed, @as(f64, @floatFromInt(elapsed)) / 1000.0 });
+
+    // Part 1: 513
+    // Time:   50042ns (50.04μs)
+    var buffer1: [64 * 1024]Interval = undefined;
+    var timer1 = try std.time.Timer.start();
+    const p1 = part1(&buffer1);
+    const elapsed1 = timer1.read();
+
+    // Part 2: 339668510830757
+    // Time:   8083ns (8.08μs)
+    var buffer2: [64 * 1024]Interval = undefined;
+    var timer2 = try std.time.Timer.start();
+    const res2 = part2(&buffer2);
+    const elapsed2 = timer2.read();
+
+    try out.interface.print("Part 1: {d}\n", .{p1.result});
+    try out.interface.print("Time:   {d}ns ({d:.2}μs)\n\n", .{ elapsed1, @as(f64, @floatFromInt(elapsed1)) / 1000.0 });
+
+    try out.interface.print("Part 2: {d}\n", .{res2});
+    try out.interface.print("Time:   {d}ns ({d:.2}μs)\n", .{ elapsed2, @as(f64, @floatFromInt(elapsed2)) / 1000.0 });
 }
