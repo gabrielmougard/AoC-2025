@@ -5,3 +5,4 @@
 * [03 - Lobby](./03-lobby/main.zig) (`zig build -Doptimize=ReleaseFast run-03-lobby`)
 * [04 - Printing department](./04-printing-department/main.zig) (`zig build -Doptimize=ReleaseFast run-04-printing-department`)
 * [05 - Cafeteria](./05-cafeteria/main.zig) (`zig build -Doptimize=ReleaseFast run-05-cafeteria`)
+* [06 - Trash compactor](./06-trash-compactor/main.zig) (`zig build -Doptimize=ReleaseFast run-06-trash-compactor`)
