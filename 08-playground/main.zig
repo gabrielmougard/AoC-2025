@@ -49,6 +49,7 @@ const UnionFind = struct {
             self.parent[current] = self.parent[self.parent[current]];
             current = self.parent[current];
         }
+
         return current;
     }
 
@@ -159,83 +160,74 @@ fn partOne(allocator: std.mem.Allocator, pts: []const Point) !u64 {
 
 fn partTwo(allocator: std.mem.Allocator, pts: []const Point) !u64 {
     const n = pts.len;
-    const num_edges = (n * (n - 1)) / 2;
-    var edges = try allocator.alloc(Edge, num_edges);
-    defer allocator.free(edges);
-
-    var idx: usize = 0;
-    for (0..n) |i| {
-        const pi = pts[i];
-        const pi_x: i64 = pi.x;
-        const pi_y: i64 = pi.y;
-        const pi_z: i64 = pi.z;
-
-        for (i + 1..n) |j| {
-            const pj = pts[j];
-            const dx = pi_x - @as(i64, pj.x);
-            const dy = pi_y - @as(i64, pj.y);
-            const dz = pi_z - @as(i64, pj.z);
-            const d = dx * dx + dy * dy + dz * dz;
-
-            edges[idx] = .{ .dist_sq = d, .i = @intCast(i), .j = @intCast(j) };
-            idx += 1;
-        }
-    }
-
-    const len = edges.len;
-    var i: usize = len / 2;
-    while (i > 0) {
-        i -= 1;
-        siftDown(edges, i, len);
-    }
 
     var uf = try UnionFind.init(allocator, n);
     defer uf.deinit(allocator);
 
-    var last_edge: Edge = undefined;
-    var heap_size = len;
+    const batch_size: usize = 4000;
 
-    while (uf.num_components > 1 and heap_size > 0) {
-        const e = edges[0];
-        heap_size -= 1;
-        if (heap_size > 0) {
-            edges[0] = edges[heap_size];
-            siftDown(edges, 0, heap_size);
+    var max_heap = std.PriorityQueue(Edge, void, maxCompare).init(allocator, {});
+    defer max_heap.deinit();
+    try max_heap.ensureTotalCapacity(batch_size + 1);
+
+    var threshold: i64 = 0;
+    var last_edge: Edge = undefined;
+
+    while (uf.num_components > 1) {
+        max_heap.cap = 0;
+        var batch_max: i64 = std.math.maxInt(i64);
+
+        for (0..n) |i| {
+            const pi = pts[i];
+            const pi_x: i64 = pi.x;
+            const pi_y: i64 = pi.y;
+            const pi_z: i64 = pi.z;
+
+            for (i + 1..n) |j| {
+                const pj = pts[j];
+                const dx = pi_x - @as(i64, pj.x);
+                const dy = pi_y - @as(i64, pj.y);
+                const dz = pi_z - @as(i64, pj.z);
+                const d = dx * dx + dy * dy + dz * dz;
+
+                if (d <= threshold) continue;
+                if (d >= batch_max) continue;
+
+                max_heap.add(.{ .dist_sq = d, .i = @intCast(i), .j = @intCast(j) }) catch unreachable;
+                if (max_heap.count() > batch_size) {
+                    _ = max_heap.remove();
+                    batch_max = max_heap.peek().?.dist_sq;
+                }
+            }
         }
 
-        if (uf.unite(e.i, e.j)) {
-            last_edge = e;
+        var batch: [batch_size]Edge = undefined;
+        const batch_count: usize = max_heap.count();
+        var idx: usize = batch_count;
+        while (max_heap.removeOrNull()) |e| {
+            idx -= 1;
+            batch[idx] = e;
+        }
+
+        std.mem.sort(Edge, batch[0..batch_count], {}, struct {
+            fn lt(_: void, a: Edge, b: Edge) bool {
+                return a.dist_sq < b.dist_sq;
+            }
+        }.lt);
+
+        for (batch[0..batch_count]) |e| {
+            if (uf.unite(e.i, e.j)) {
+                last_edge = e;
+                if (uf.num_components == 1) break;
+            }
+
+            threshold = e.dist_sq;
         }
     }
 
     const x1: u64 = @intCast(pts[last_edge.i].x);
     const x2: u64 = @intCast(pts[last_edge.j].x);
     return x1 * x2;
-}
-
-fn siftDown(edges: []Edge, start: usize, len: usize) void {
-    var root = start;
-    while (true) {
-        const left = 2 * root + 1;
-        if (left >= len) break;
-
-        var smallest = root;
-        if (edges[left].dist_sq < edges[smallest].dist_sq) {
-            smallest = left;
-        }
-
-        const right = left + 1;
-        if (right < len and edges[right].dist_sq < edges[smallest].dist_sq) {
-            smallest = right;
-        }
-
-        if (smallest == root) break;
-
-        const tmp = edges[root];
-        edges[root] = edges[smallest];
-        edges[smallest] = tmp;
-        root = smallest;
-    }
 }
 
 pub fn main() !void {
@@ -254,7 +246,7 @@ pub fn main() !void {
     const elapsed1 = t1.read();
 
     // Part 1: 352584
-    // Time: 517166ns (517.17μs)
+    // Time: 584209ns (584.21μs)
     try out.interface.print("Part 1: {d}\n", .{result1});
     try out.interface.print("Time: {d}ns ({d:.2}μs)\n\n", .{ elapsed1, @as(f64, @floatFromInt(elapsed1)) / 1000.0 });
 
@@ -263,7 +255,7 @@ pub fn main() !void {
     const elapsed2 = t2.read();
 
     // Part 2: 9617397716
-    // Time: 3169000ns (3169.00μs)
+    // Time: 2376417ns (2376.42μs)
     try out.interface.print("Part 2: {d}\n", .{result2});
     try out.interface.print("Time: {d}ns ({d:.2}μs)\n\n", .{ elapsed2, @as(f64, @floatFromInt(elapsed2)) / 1000.0 });
 
