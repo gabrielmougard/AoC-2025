@@ -10,3 +10,4 @@
 * [08 - Playground](./08-playground/main.zig) (`zig build -Doptimize=ReleaseFast run-08-playground`)
 * [09 - Movie theater](./09-movie-theater/main.zig) (`zig build -Doptimize=ReleaseFast run-09-movie-theater`)
 * [10 - Factory](./10-factory/main.zig) (`zig build -Doptimize=ReleaseFast run-10-factory`)
+* [11 - Reactor](./11-reactor/main.zig) (`zig build -Doptimize=ReleaseFast run-11-reactor`)

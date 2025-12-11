@@ -17,6 +17,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "08-playground", .path = "08-playground/main.zig" },
         .{ .name = "09-movie-theater", .path = "09-movie-theater/main.zig" },
         .{ .name = "10-factory", .path = "10-factory/main.zig" },
+        .{ .name = "11-reactor", .path = "11-reactor/main.zig" },
     };
 
     inline for (executables) |exe_config| {
