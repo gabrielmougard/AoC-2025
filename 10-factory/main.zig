@@ -2,27 +2,40 @@ const std = @import("std");
 
 const input_data = @embedFile("input.txt");
 
-// This finds the minimum number of buttons whose XOR equals target.
-// Since toggling is XOR, pressing a button twice cancels out. Therefore, each button is either pressed once or not at all.
-// We need the smallest subset of buttons where XOR of all masks in subset = target.
-// We enumerate combinations by size (1, 2, 3, ...) until solution is found.
+// Part 1 is very much a XOR subset problem:
+// each machine has indicator lights (initially OFF) that must match a
+// target pattern. Buttons toggle specific lights when pressed. Find the minimum
+// total button presses across all machines. Toggling is XOR -> pressing a button twice cancels out.
+// Therefore, each button is pressed 0 or 1 times.
+// We need the smallest subset of buttons where XOR(masks in subset) = target.
+// Let's enumerate combinations by size k = 1, 2, 3, ... until found.
+// This guarantees minimum since we check smaller sizes first.
+//
+// Example: [.##.] (3) (1,3) (2) (2,3) (0,2) (0,1) {3,5,4,7}
+//   - Target pattern [.##.]: lights 1,2 ON -> bitmask 0b0110
+//   - Button (0,1): toggles lights 0,1 -> bitmask 0b0011
+//   - Button (2,3): toggles lights 2,3 -> bitmask 0b1100
+//   - Joltage {3,5,4,7}: ignored in Part 1
 //
 // Example: buttons = [0b0101, 0b0011, 0b0110], target = 0b0110
-//   k=1: try each button alone
-//        0b0110 == target OK -> return 1
+//   k=1: check each button alone -> 0b0110 == target OK -> return 1
 //
-// Example: buttons = [0b0001, 0b0010, 0b0100], target = 0b0011
-//   k=1: 0b0001 != 0b0011, 0b0010 != 0b0011, 0b0100 != 0b0011
+//   buttons = [0b0001, 0b0010, 0b0100], target = 0b0011
+//   k=1: none match
 //   k=2: 0b0001 XOR 0b0010 = 0b0011 == target OK -> return 2
 //
-// Time comp: O(C(n,1) + C(n,2) + ... + C(n,k)) where k is the answer. Worst case O(2^n), but typically O(n^2) since k is small
-// Space comp: O(k) for combination indices
-fn findMinButtons(buttons: []const u16, target: u16) u32 {
+// Time comp: O(C(n,1) + C(n,2) + ... + C(n,k)) where k = answer
+//                  Worst case O(2^n), typically O(n²) since k is small
+// Space comp: O(n) for button storage, O(k) for combination indices
+
+// Finds minimum number of buttons whose XOR equals target.
+// Returns 0 if target is already 0, 255 if no solution exists.
+fn findMinXorSubset(buttons: []const u16, target: u16) u32 {
     if (target == 0) return 0;
 
     const n = buttons.len;
     for (1..n + 1) |k| {
-        if (tryKButtons(buttons, target, n, k)) {
+        if (hasKButtonSolution(buttons, target, n, k)) {
             return @intCast(k);
         }
     }
@@ -31,19 +44,15 @@ fn findMinButtons(buttons: []const u16, target: u16) u32 {
 }
 
 // Tests if target can be achieved with exactly k button presses.
-// For each combination, XORs the corresponding button masks and checks against target.
+// Uses lexicographic combination generation.
 //
-// Example for n=4, k=2:
+// Combination iteration for n=4, k=2:
 //   [0,1] -> [0,2] -> [0,3] -> [1,2] -> [1,3] -> [2,3]
 //
-// Example: n=5, k=3, indices=[0,2,4]
-//   - Index 2 (value 4) can't increment (max is 4)
-//   - Index 1 (value 2) can increment to 3
-//   - Result: [0,3,4]
-//
-// Time comp: O(C(n,k) * k) -> enumerate all combinations, k XORs each
-// Space comp: O(k) for indices array
-fn tryKButtons(buttons: []const u16, target: u16, n: usize, k: usize) bool {
+// Increment logic: Find rightmost index that can increase, increment it,
+// then reset all following indices to consecutive values.
+//   Example: n=5, k=3, [0,2,4] -> index 1 can increment -> [0,3,4]
+fn hasKButtonSolution(buttons: []const u16, target: u16, n: usize, k: usize) bool {
     var indices: [20]usize = undefined;
     for (0..k) |i| {
         indices[i] = i;
@@ -55,9 +64,7 @@ fn tryKButtons(buttons: []const u16, target: u16, n: usize, k: usize) bool {
             xor_val ^= buttons[indices[i]];
         }
 
-        if (xor_val == target) {
-            return true;
-        }
+        if (xor_val == target) return true;
 
         var i: usize = k;
         while (i > 0) {
@@ -67,7 +74,6 @@ fn tryKButtons(buttons: []const u16, target: u16, n: usize, k: usize) bool {
                 for (i + 1..k) |j| {
                     indices[j] = indices[j - 1] + 1;
                 }
-
                 break;
             }
         } else {
@@ -76,16 +82,13 @@ fn tryKButtons(buttons: []const u16, target: u16, n: usize, k: usize) bool {
     }
 }
 
-// Example: [.##.] -> target = 0b0110 (lights 1,2 on)
-//          (0,2)  button mask = 0b0101 (toggles lights 0,2)
-//
-// Time comp: O(L + 2^n) where L = line length, n = number of buttons
-// Space comp: O(n) for button storage
-fn partOneMachine(line: []const u8) !u32 {
+// Format: [.##.] (0,1) (2,3) ... {joltage}
+//   - [.##.]: '.' = OFF, '#' = ON -> bit i set if light i should be ON
+//   - (0,1): button toggles lights 0 and 1 -> bitmask with bits 0,1 set
+fn solvePartOneMachine(line: []const u8) !u32 {
     var target: u16 = 0;
     var buttons: [64]u16 = undefined;
     var num_buttons: usize = 0;
-
     var i: usize = 0;
     if (line[i] != '[') return error.ParseError;
     i += 1;
@@ -94,11 +97,10 @@ fn partOneMachine(line: []const u8) !u32 {
         if (line[i] == '#') {
             target |= @as(u16, 1) << bit_pos;
         }
-
         bit_pos += 1;
     }
 
-    i += 1; // skip ']'
+    i += 1;
     while (i < line.len) {
         if (line[i] == '(') {
             i += 1;
@@ -116,10 +118,9 @@ fn partOneMachine(line: []const u8) !u32 {
                     i += 1;
                 }
             }
-
             buttons[num_buttons] = mask;
             num_buttons += 1;
-            i += 1; // skip ')'
+            i += 1;
         } else if (line[i] == '{') {
             break;
         } else {
@@ -127,41 +128,65 @@ fn partOneMachine(line: []const u8) !u32 {
         }
     }
 
-    return findMinButtons(buttons[0..num_buttons], target);
+    return findMinXorSubset(buttons[0..num_buttons], target);
 }
 
-// Each machine has indicator lights (initially all off) that must match a target pattern.
-// Buttons toggle specific lights when pressed. We need the minimum total button presses
-// across all machines to achieve their target patterns.
-//
-// 1) Parse each machine's target pattern and button configurations
-// 2) For each machine, find minimum buttons needed using combination enumeration
-// 3) Sum the minimum presses across all machines
-//
-// Example:
-//   [.##.] (3) (1,3) (2) (2,3) (0,2) (0,1) {3,5,4,7}
-//   - Target: lights 1,2 ON (0-indexed), lights 0,3 OFF -> bitmask 0b0110 = 6
-//   - Button (0,1) toggles lights 0 and 1 -> bitmask 0b0011 = 3
-//   - Joltage {3,5,4,7} is ignored
-//
-// Time comp: O(M * sum(C(n_i, k))) where M = machines, n_i = buttons per machine
-// Space comp: O(1) -> only fixed-size arrays used
 pub fn partOne() !u64 {
     var total: u64 = 0;
     var lines = std.mem.tokenizeScalar(u8, input_data, '\n');
     while (lines.next()) |line| {
-        total += try partOneMachine(line);
+        total += try solvePartOneMachine(line);
     }
-
     return total;
 }
 
-///// Part 2 /////
+// Part 2 is an integer linear programming problem:
+// each machine has counters (initially 0) that must reach target values.
+// Buttons increment specific counters by 1 each press. Buttons can be pressed
+// multiple times. Find minimum total presses across all machines.
+//
+//   Given: Matrix A where A[i][j] = 1 if button j affects counter i
+//          Target vector b (desired counter values)
+//   Find:  Vector x ≥ 0 (button press counts) minimizing sum(x)
+//          Subject to: A·x = b
+//
+// Example: [.##.] (3) (1,3) (2) (2,3) (0,2) (0,1) {3,5,4,7}
+//   - Buttons: (3)→counter 3, (1,3)→counters 1,3, (2)→counter 2, etc.
+//   - Targets: {3,5,4,7} → counter[0]=3, counter[1]=5, counter[2]=4, counter[3]=7
+//
+//   System of equations (button variables x0..x5):
+//     counter 0: x4 + x5 = 3        (buttons (0,2) and (0,1) affect counter 0)
+//     counter 1: x1 + x5 = 5        (buttons (1,3) and (0,1) affect counter 1)
+//     counter 2: x2 + x3 + x4 = 4   (buttons (2), (2,3), (0,2) affect counter 2)
+//     counter 3: x0 + x1 + x3 = 7   (buttons (3), (1,3), (2,3) affect counter 3)
+//
+//   1) Build augmented matrix [A | b]
+//   2) Gaussian elimination -> reduced row echelon form (using exact rational arithmetic)
+//   3) Identify pivot variables (determined) and free variables (can vary)
+//   4) Search over non-negative integer values of free variables
+//   5) For each assignment, back-substitute to get pivot variables
+//   6) Track minimum total cost among valid (all non-negative integer) solutions
+//
+// Example Gaussian Elimination:
+//   Original:  [1 0 0 0 1 1 | 3]   (counter 0 equation)
+//              [0 1 0 0 0 1 | 5]   (counter 1 equation)
+//              [0 0 1 1 1 0 | 4]   (counter 2 equation)
+//              [1 1 0 1 0 0 | 7]   (counter 3 equation)
+//
+//   After elimination: pivot columns identified, free variables searched
+//
+// Time comp: O(M * (n^3 + B^f)) where M=machines, n=counters,
+//                  f=free variables, B=max target value
+// Space comp: O(n * m) for matrix, O(f) for search state
+//==============================================================================
 
 const MAX_BUTTONS = 20;
 const MAX_COUNTERS = 16;
 
-// This models a rational number for exact arithmetic during Gaussian elimination
+// Rational number for exact arithmetic during Gaussian elimination.
+// Avoids floating-point precision issues that could cause incorrect solutions.
+//
+// Example: 1/3 + 1/6 = 2/6 + 1/6 = 3/6 = 1/2 (exactly, no rounding)
 const Rational = struct {
     num: i64,
     den: i64,
@@ -176,7 +201,10 @@ const Rational = struct {
         }
 
         const g = gcd(@abs(num), @abs(den));
-        return .{ .num = @divTrunc(num, @as(i64, @intCast(g))), .den = @divTrunc(den, @as(i64, @intCast(g))) };
+        return .{
+            .num = @divTrunc(num, @as(i64, @intCast(g))),
+            .den = @divTrunc(den, @as(i64, @intCast(g))),
+        };
     }
 
     fn gcd(a: u64, b: u64) u64 {
@@ -212,6 +240,7 @@ const Rational = struct {
     }
 
     fn toInt(self: Rational) ?i64 {
+        if (self.den == 0) return null;
         if (@rem(self.num, self.den) != 0) return null;
         return @divTrunc(self.num, self.den);
     }
@@ -221,24 +250,117 @@ const Rational = struct {
     }
 };
 
-// Matrix A[counter][button] = 1 if button affects counter, 0 otherwise
-// Find x >= 0 minimizing sum(x) such that A*x = targets
+// This recursively searches over free variables with pruning.
+// After Gaussian elimination, we have:
+//   - Pivot variables that are determined by free variable values via back-substitution
+//   - Free variables that can take any non-negative integer value (bounded by targets)
 //
-// 1) Build augmented matrix [A | targets]
-// 2) Gaussian elimination to row echelon form
-// 3) Identify pivot (dependent) and free variables
-// 4) Express solution as: x_pivot = f(free variables)
-// 5) Search over non-negative integer values of free variables
+// The search strategy is to try free variable values 0, 1, 2, ... up to bound,
+// and prune branches where current cost >= best known solution.
+// Also, we early exit when optimal found (cost can't decrease).
 //
-// The search is bounded because free variables can't exceed max(targets).
-fn solveSystem(buttons: []const u32, targets: []const u32) !u64 {
+// Example: 2 free variables, bound=10, current best=15
+//   depth=0: try v=0,1,2,... (stop when cost >= 15) -> 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+//   depth=1: for each v[0], try v=0,1,2,... (stop when cost >= 15) -> 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+//   depth=2: evaluate full solution via back-substitution
+fn searchFreeVariables(
+    matrix: *[MAX_COUNTERS][MAX_BUTTONS + 1]Rational,
+    num_buttons: usize,
+    num_pivots: usize,
+    pivot_col: *[MAX_COUNTERS]i32,
+    free_vars: *[MAX_BUTTONS]usize,
+    num_free: usize,
+    bound: u64,
+    free_vals: *[MAX_BUTTONS]u64,
+    depth: usize,
+    current_free_cost: u64,
+    min_cost: *u64,
+) void {
+    if (current_free_cost >= min_cost.*) return;
+    if (depth == num_free) {
+        var solution: [MAX_BUTTONS]i64 = .{0} ** MAX_BUTTONS;
+        for (0..num_free) |f| {
+            solution[free_vars[f]] = @intCast(free_vals[f]);
+        }
+
+        var total_cost: u64 = current_free_cost;
+        var valid = true;
+
+        // We use back-substitution to solve pivot variables from bottom row up
+        // On each pivot row, we have: x_pivot = RHS - sum(coeff[j] * x[j]) for j > pivot_col
+        var row_idx: usize = num_pivots;
+        while (row_idx > 0) {
+            row_idx -= 1;
+            const col: usize = @intCast(pivot_col[row_idx]);
+            var val = matrix[row_idx][num_buttons]; // RHS
+            for (col + 1..num_buttons) |c| {
+                val = val.sub(matrix[row_idx][c].mul(Rational.fromInt(solution[c])));
+            }
+
+            if (val.toInt()) |v| {
+                if (v < 0) {
+                    valid = false;
+                    break;
+                }
+                solution[col] = v;
+                total_cost += @intCast(v);
+                if (total_cost >= min_cost.*) {
+                    valid = false;
+                    break;
+                }
+            } else {
+                valid = false;
+                break;
+            }
+        }
+
+        if (valid and total_cost < min_cost.*) {
+            min_cost.* = total_cost;
+        }
+
+        return;
+    }
+
+    const remaining_budget = if (min_cost.* > current_free_cost)
+        min_cost.* - current_free_cost
+    else
+        0;
+    const this_bound = @min(bound, remaining_budget);
+
+    var v: u64 = 0;
+    while (v < this_bound) : (v += 1) {
+        free_vals[depth] = v;
+        searchFreeVariables(
+            matrix,
+            num_buttons,
+            num_pivots,
+            pivot_col,
+            free_vars,
+            num_free,
+            bound,
+            free_vals,
+            depth + 1,
+            current_free_cost + v,
+            min_cost,
+        );
+
+        // If best solution uses <= current free cost, no point trying larger
+        if (min_cost.* <= current_free_cost + v) break;
+    }
+}
+
+// This solves the integer linear system A * x = b with x >= 0, minimizing sum(x).
+//
+//   1) Gaussian elimination with partial pivoting
+//   2) Check for inconsistency (row [0 0 ... 0 | nonzero])
+//   3) Identify free variables (columns without pivots)
+//   4) Search over free variable assignments
+//   5) Back-substitute to get pivot variables, validate and track minimum
+fn solveLinearSystem(buttons: []const u32, targets: []const u32) !u64 {
     const num_buttons = buttons.len;
     const num_counters = targets.len;
 
-    // Build augmented matrix [A | b] as rationals
-    // Rows = counters, Cols = buttons + 1 (for target)
     var matrix: [MAX_COUNTERS][MAX_BUTTONS + 1]Rational = undefined;
-
     for (0..num_counters) |row| {
         for (0..num_buttons) |col| {
             const bit = @as(u5, @intCast(row));
@@ -247,15 +369,14 @@ fn solveSystem(buttons: []const u32, targets: []const u32) !u64 {
             else
                 Rational.fromInt(0);
         }
+
         matrix[row][num_buttons] = Rational.fromInt(@intCast(targets[row]));
     }
 
-    // Gaussian elimination with partial pivoting
-    var pivot_col: [MAX_COUNTERS]i32 = .{-1} ** MAX_COUNTERS; // which column is pivot for each row
+    var pivot_col: [MAX_COUNTERS]i32 = .{-1} ** MAX_COUNTERS;
     var current_row: usize = 0;
 
     for (0..num_buttons) |col| {
-        // Find pivot row
         var pivot_row: ?usize = null;
         for (current_row..num_counters) |row| {
             if (!matrix[row][col].isZero()) {
@@ -265,7 +386,6 @@ fn solveSystem(buttons: []const u32, targets: []const u32) !u64 {
         }
 
         if (pivot_row) |pr| {
-            // Swap rows
             if (pr != current_row) {
                 for (0..num_buttons + 1) |c| {
                     const tmp = matrix[current_row][c];
@@ -274,13 +394,11 @@ fn solveSystem(buttons: []const u32, targets: []const u32) !u64 {
                 }
             }
 
-            // Scale pivot row
             const pivot_val = matrix[current_row][col];
             for (0..num_buttons + 1) |c| {
                 matrix[current_row][c] = matrix[current_row][c].div(pivot_val);
             }
 
-            // Eliminate column in other rows
             for (0..num_counters) |row| {
                 if (row != current_row and !matrix[row][col].isZero()) {
                     const factor = matrix[row][col];
@@ -296,15 +414,12 @@ fn solveSystem(buttons: []const u32, targets: []const u32) !u64 {
     }
 
     const num_pivots = current_row;
-
-    // Check for inconsistency (row of form [0 0 ... 0 | nonzero])
     for (num_pivots..num_counters) |row| {
         if (!matrix[row][num_buttons].isZero()) {
             return error.NoSolution;
         }
     }
 
-    // Identify free variables
     var is_pivot: [MAX_BUTTONS]bool = .{false} ** MAX_BUTTONS;
     for (0..num_pivots) |row| {
         if (pivot_col[row] >= 0) {
@@ -321,82 +436,29 @@ fn solveSystem(buttons: []const u32, targets: []const u32) !u64 {
         }
     }
 
-    // Find max target for bounding search
-    var max_target: u32 = 0;
+    var max_target: u64 = 0;
     for (targets) |t| {
         if (t > max_target) max_target = t;
     }
 
-    // Search over free variables
-    // Each free variable can range from 0 to max_target
-    const bound: u64 = @min(max_target + 1, 300); // reasonable bound
+    const search_bound: u64 = max_target + 1;
 
     var min_cost: u64 = std.math.maxInt(u64);
-
-    // Enumerate all combinations of free variables
     var free_vals: [MAX_BUTTONS]u64 = .{0} ** MAX_BUTTONS;
 
-    while (true) {
-        // Compute dependent variables from free variables
-        var solution: [MAX_BUTTONS]Rational = undefined;
-        for (0..num_buttons) |col| {
-            solution[col] = Rational.fromInt(0);
-        }
-
-        // Set free variables
-        for (0..num_free) |f| {
-            solution[free_vars[f]] = Rational.fromInt(@intCast(free_vals[f]));
-        }
-
-        // Compute pivot variables (back substitution)
-        var valid = true;
-        var row_idx: usize = num_pivots;
-        while (row_idx > 0) {
-            row_idx -= 1;
-            const col: usize = @intCast(pivot_col[row_idx]);
-            var val = matrix[row_idx][num_buttons];
-
-            for (col + 1..num_buttons) |c| {
-                val = val.sub(matrix[row_idx][c].mul(solution[c]));
-            }
-
-            solution[col] = val;
-        }
-
-        // Check if solution is valid (non-negative integers)
-        var cost: u64 = 0;
-        for (0..num_buttons) |col| {
-            if (solution[col].toInt()) |v| {
-                if (v < 0) {
-                    valid = false;
-                    break;
-                }
-                cost += @intCast(v);
-            } else {
-                valid = false;
-                break;
-            }
-        }
-
-        if (valid and cost < min_cost) {
-            min_cost = cost;
-        }
-
-        // Increment free variables (odometer style)
-        var carry = true;
-        for (0..num_free) |f| {
-            if (carry) {
-                free_vals[f] += 1;
-                if (free_vals[f] >= bound) {
-                    free_vals[f] = 0;
-                } else {
-                    carry = false;
-                }
-            }
-        }
-
-        if (carry) break; // All combinations exhausted
-    }
+    searchFreeVariables(
+        &matrix,
+        num_buttons,
+        num_pivots,
+        &pivot_col,
+        &free_vars,
+        num_free,
+        search_bound,
+        &free_vals,
+        0,
+        0,
+        &min_cost,
+    );
 
     if (min_cost == std.math.maxInt(u64)) {
         return error.NoSolution;
@@ -405,27 +467,19 @@ fn solveSystem(buttons: []const u32, targets: []const u32) !u64 {
     return min_cost;
 }
 
-// Example: [.##.] (3) (1,3) (2) (2,3) (0,2) (0,1) {3,5,4,7}
-//   - Buttons: (3) -> affects counter 3, (1,3) -> affects counters 1,3, etc.
-//   - Targets: counter 0=3, counter 1=5, counter 2=4, counter 3=7
-//   - Find x0,x1,x2,x3,x4,x5 >= 0 minimizing sum, where:
-//     counter0: x4 + x5 = 3
-//     counter1: x1 + x5 = 5
-//     counter2: x2 + x3 + x4 = 4
-//     counter3: x0 + x1 + x3 = 7
-fn partTwoMachine(line: []const u8) !u64 {
-    var buttons: [MAX_BUTTONS]u32 = undefined; // bitmask of counters affected
+// Format: [ignored] (0,1) (2,3) ... {target0,target1,...}
+//   - (0,1): button affects counters 0 and 1 -> bitmask 0b0011
+//   - {3,5,4}: targets -> counter[0]=3, counter[1]=5, counter[2]=4
+fn solvePartTwoMachine(line: []const u8) !u64 {
+    var buttons: [MAX_BUTTONS]u32 = undefined;
     var num_buttons: usize = 0;
     var targets: [MAX_COUNTERS]u32 = undefined;
     var num_counters: usize = 0;
-
     var i: usize = 0;
 
-    // Skip indicator pattern [...]
     while (i < line.len and line[i] != ']') : (i += 1) {}
     i += 1;
 
-    // Parse buttons (0,1,3) ...
     while (i < line.len) {
         if (line[i] == '(') {
             i += 1;
@@ -447,7 +501,6 @@ fn partTwoMachine(line: []const u8) !u64 {
             i += 1;
         } else if (line[i] == '{') {
             i += 1;
-            // Parse targets {3,5,4,7}
             while (line[i] != '}') {
                 if (line[i] >= '0' and line[i] <= '9') {
                     var num: u32 = 0;
@@ -467,45 +520,37 @@ fn partTwoMachine(line: []const u8) !u64 {
         }
     }
 
-    return solveSystem(buttons[0..num_buttons], targets[0..num_counters]);
+    return solveLinearSystem(buttons[0..num_buttons], targets[0..num_counters]);
 }
 
-// This is an Integer Linear Programming problem:
-//   Given matrix A (button-counter incidence) and target vector b,
-//   find x >= 0 minimizing sum(x) such that A*x = b
-//
-// 1) Parse buttons and targets into matrix form
-// 2) Use Gaussian elimination to find solution space
-// 3) Search over free variables to find minimum-cost solution
-//
-// Time comp: O(M * (n^3 + k * 2^f)) where M=machines, n=counters,
-//                  f=free variables after elimination, k=search bound
-// Space comp: O(n * m) for the matrix
 pub fn partTwo() !u64 {
     var total: u64 = 0;
     var lines = std.mem.tokenizeScalar(u8, input_data, '\n');
     while (lines.next()) |line| {
-        total += try partTwoMachine(line);
+        total += try solvePartTwoMachine(line);
     }
 
     return total;
 }
 
 pub fn main() !void {
+    var out = std.fs.File.stdout().writerStreaming(&.{});
+
     var timer = try std.time.Timer.start();
     const result1 = try partOne();
-    const e1 = timer.read();
-    var out = std.fs.File.stdout().writerStreaming(&.{});
-    // 434
-    // Time: 69375ns (69μs)
-    try out.interface.print("Part 1: {}\n", .{result1});
-    try out.interface.print("Time: {d}ns ({d}μs)\n", .{ e1, e1 / 1000 });
+    const time1 = timer.read();
 
-    timer = try std.time.Timer.start();
+    // Part 1: 434
+    // Time: 69125ns (69μs)
+    try out.interface.print("Part 1: {}\n", .{result1});
+    try out.interface.print("Time: {d}ns ({d}μs)\n\n", .{ time1, time1 / 1000 });
+
+    timer.reset();
     const result2 = try partTwo();
-    const e2 = timer.read();
+    const time2 = timer.read();
+
     // Part 2: 15132
-    // Time: 9399645958ns (9399645μs) -> ~9.4s
+    // Time: 336677542ns (336677μs) -> ~337ms
     try out.interface.print("Part 2: {}\n", .{result2});
-    try out.interface.print("Time: {d}ns ({d}μs)\n", .{ e2, e2 / 1000 });
+    try out.interface.print("Time: {d}ns ({d}μs)\n", .{ time2, time2 / 1000 });
 }
