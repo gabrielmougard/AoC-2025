@@ -11,3 +11,4 @@
 * [09 - Movie theater](./09-movie-theater/main.zig) (`zig build -Doptimize=ReleaseFast run-09-movie-theater`)
 * [10 - Factory](./10-factory/main.zig) (`zig build -Doptimize=ReleaseFast run-10-factory`)
 * [11 - Reactor](./11-reactor/main.zig) (`zig build -Doptimize=ReleaseFast run-11-reactor`)
+* [12 - Christmas tree farm](./12-christmas-tree-farm/main.zig) (`zig build -Doptimize=ReleaseFast run-12-christmas-tree-farm`)
